@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "city":    { "type": "string" },
+    "state":   { "type": "string" },
+    "country": { "type": "string" }
+  },
+  "required": ["city", "state", "country"],
+  "additionalProperties": false
+}
+

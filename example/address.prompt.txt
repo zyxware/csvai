@@ -1,0 +1,13 @@
+Extract city, state, and country from the given address.
+
+Rules:
+- city: city/town/locality (preserve accents, proper case)
+- state: ISO-standard name of the state/region/province or "" if none
+- country: ISO 3166 English short name of the country; infer if obvious, else ""
+- Ignore descriptors like "(EU)"
+- Do not guess street-level info
+
+Return JSON with ONLY the fields required by the tool schema.
+
+Address: {{ Address }}
+
