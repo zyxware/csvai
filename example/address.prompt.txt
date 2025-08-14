@@ -7,7 +7,6 @@ Rules:
 - Ignore descriptors like "(EU)"
 - Do not guess street-level info
 
-Return JSON with ONLY the fields required by the tool schema.
-
-Address: {{ Address }}
+Inputs:
+Address: {{Address}}
 

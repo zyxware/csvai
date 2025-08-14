@@ -1,9 +1,18 @@
 {
   "type": "object",
   "properties": {
-    "city":    { "type": "string" },
-    "state":   { "type": "string" },
-    "country": { "type": "string" }
+    "city": {
+      "type": "string",
+      "description": "City, town, or locality name with correct casing and accents preserved"
+    },
+    "state": {
+      "type": "string",
+      "description": "ISO-standard name of the state, region, or province, or empty string if none"
+    },
+    "country": {
+      "type": "string",
+      "description": "ISO 3166 English short name of the country, inferred if obvious, else empty string"
+    }
   },
   "required": ["city", "state", "country"],
   "additionalProperties": false

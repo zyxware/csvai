@@ -212,47 +212,50 @@ async def call_openai_responses(
 # =============================
 
 def load_schema(schema_path: Optional[str], prompt_path: Optional[Path]) -> Optional[Dict[str, Any]]:
-    """Load a JSON Schema if provided. Otherwise auto-discover near the prompt.
+    """Load a JSON Schema if provided. Otherwise auto-discover beside the prompt.
 
-    Auto-discovery tries, in order (first existing wins):
-      1) <prompt>.schema.json                (e.g., address.prompt.txt → address.prompt.schema.json)
-      2) <prompt without .prompt>.schema.json (e.g., address.prompt.txt → address.schema.json)
-      3) <prompt.stem>.schema.json           (e.g., address.txt → address.schema.json)
+    Auto-discovery rule:
+      - If prompt ends with ".prompt.txt": strip the ".prompt" and add ".schema.json"
+          e.g., "address.prompt.txt" → "address.schema.json"
+      - Else: replace the last extension with ".schema.json"
+          e.g., "test.txt" → "test.schema.json"
 
     Also normalizes the schema to meet Responses API structured-output requirements:
     - Ensures `required` exists and includes **every** key in `properties` when `type: object`.
     """
     path: Optional[Path] = None
 
+    # Explicit schema path wins
     if schema_path:
         path = Path(schema_path).expanduser().resolve()
         if not path.exists():
             raise FileNotFoundError(f"Schema file not found: {path}")
+        logging.info("Using schema file: %s", path)
+
+    # Auto-discovery from prompt filename
     elif prompt_path is not None:
-        candidates: List[Path] = []
-        # 1) address.prompt.txt → address.prompt.schema.json
-        candidates.append(prompt_path.with_suffix(".schema.json"))
-        # 2) address.prompt.txt → address.schema.json (strip the .prompt part)
         name = prompt_path.name
         if name.endswith(".prompt.txt"):
-            candidates.append(prompt_path.with_name(name[:-len(".prompt.txt")] + ".schema.json"))
+            # address.prompt.txt → address.schema.json
+            cand = prompt_path.with_name(name[:-len(".prompt.txt")] + ".schema.json")
         else:
-            # 3) address.txt → address.schema.json
-            candidates.append(prompt_path.with_name(prompt_path.stem + ".schema.json"))
-        for cand in candidates:
-            if cand.exists():
-                path = cand
-                break
+            # test.txt → test.schema.json
+            cand = prompt_path.with_name(prompt_path.stem + ".schema.json")
+
+        if cand.exists():
+            path = cand
+            logging.info("Auto-discovered schema file: %s", path)
 
     if not path:
         return None
 
+    # Load & normalize schema
     with open(path, "r", encoding="utf-8") as f:
         schema = json.load(f)
         if not isinstance(schema, dict):
             raise ValueError("Schema root must be a JSON object")
 
-        # Normalize: ensure `required` includes *all* properties (Responses structured outputs requirement)
+        # Normalize: ensure `required` includes *all* properties for type=object
         try:
             if schema.get("type") == "object" and isinstance(schema.get("properties"), dict):
                 props = list(schema["properties"].keys())
@@ -264,23 +267,42 @@ def load_schema(schema_path: Optional[str], prompt_path: Optional[Path]) -> Opti
                     if missing:
                         schema["required"] = req + missing
         except Exception:
+            # Keep schema as-is if normalization fails; caller will surface API errors
             pass
-        return schema
+
+    return schema
 
 # =============================
 # File helpers
 # =============================
-# =============================
 
 def choose_prompt_file(input_path: Path, user_prompt: Optional[str]) -> Path:
+    """Return the prompt file to use, with auto-discovery if none provided.
+
+    Auto-discovery tries, in order (first existing wins):
+      1) <input>.prompt.txt              (e.g., address.csv → address.prompt.txt)
+      2) DEFAULT_PROMPT_FILENAME         (e.g., prompt.txt)
+    """
+    path: Optional[Path] = None
     if user_prompt:
-        return Path(user_prompt)
+        path = Path(user_prompt).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {path}")
+        logging.info("Using prompt file: %s", path)
+        return path
+
+    # 1) address.csv → address.prompt.txt
     c1 = input_path.with_suffix(ALT_PROMPT_SUFFIX)
     if c1.exists():
+        logging.info("Auto-discovered prompt file: %s", c1)
         return c1
+
+    # 2) prompt.txt (DEFAULT_PROMPT_FILENAME)
     c2 = Path(DEFAULT_PROMPT_FILENAME)
     if c2.exists():
+        logging.info("Auto-discovered prompt file: %s", c2)
         return c2
+
     raise FileNotFoundError(
         f"No prompt file supplied and neither '{c1.name}' nor '{c2.name}' exist."
     )
