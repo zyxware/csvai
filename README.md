@@ -1,6 +1,6 @@
-# CSVAI — Apply an AI prompt to each row in a CSV and write enriched results
+# CSVAI — Apply an AI prompt to each row in a CSV or Excel file and write enriched results
 
-`csvai.py` reads an input CSV, renders a prompt for each row (you can use raw CSV column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV.
+`csvai.py` reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file.
 
 The tool is **async + concurrent**, **resumable**, and **crash-safe**. It supports **Structured Outputs** with a **JSON Schema** for reliable JSON, or **JSON mode** (without a schema) if you prefer a lighter setup.
 
@@ -14,6 +14,7 @@ We also have a **CSV AI Prompt Builder** (a Custom GPT) to help you generate pro
 * **JSON mode**: force a single JSON object without defining a schema.
 * **Async & concurrent**: process many rows in parallel for faster throughput.
 * **Resumable**: rows already written (by `id`) are skipped on re-run.
+* **CSV or Excel**: handle `.csv` and `.xlsx` inputs and outputs.
 
 ---
 
@@ -40,7 +41,7 @@ cp example.env .env
 If you name your files like this:
 
 ```
-input.csv
+input.csv      # or input.xlsx
 input.prompt.txt
 input.schema.json   # optional
 ```
@@ -48,18 +49,20 @@ input.schema.json   # optional
 Run:
 
 ```bash
-python csvai.py input.csv
+python csvai.py input.csv      # or input.xlsx
 ```
 
 ### Or specify prompt & schema explicitly
 
 ```bash
 # With a prompt and a strict schema (best reliability)
-python csvai.py address.csv --prompt address.prompt.txt --schema address.schema.json
+python csvai.py address.xlsx --prompt address.prompt.txt --schema address.schema.json
 
 # Or JSON mode (no schema; still a single JSON object)
-python csvai.py address.csv --prompt address.prompt.txt
+python csvai.py address.xlsx --prompt address.prompt.txt
 ```
+
+Sample datasets (`address.csv` and `address.xlsx`) with the matching prompt and schema live in the `example/` directory.
 
 ---
 

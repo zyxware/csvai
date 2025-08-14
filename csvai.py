@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-csvai.py — Apply an AI prompt to each row in a CSV file and write enriched results.
+csvai.py — Apply an AI prompt to each row in a CSV or Excel file and write enriched results.
 
-This script reads an input CSV, renders a Jinja prompt for each row (you can use raw
-CSV column names like {{ Org Name }}; they’ll be auto-sanitized to {{ Org_Name }}),
+This script reads an input CSV/Excel, renders a Jinja prompt for each row (you can use raw
+column names like {{ Org Name }}; they’ll be auto-sanitized to {{ Org_Name }}),
 calls an OpenAI model via the Responses API, extracts JSON fields according to an
 optional JSON schema, and writes the original columns plus AI-generated fields to an
-output CSV.
+output CSV or Excel file.
 
 Key features:
 - Async + concurrent: processes rows in batches with configurable concurrency.
@@ -23,7 +23,7 @@ Usage:
                               [--limit N] [--model MODEL] [--schema SCHEMA_FILE]
 
 Example:
-    python csvai.py address.csv --prompt address.prompt.txt --schema address.schema.json
+    python csvai.py address.xlsx --prompt address.prompt.txt --schema address.schema.json
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import pandas as pd
+from openpyxl import Workbook, load_workbook
 import json
 import logging
 import os
@@ -84,10 +86,14 @@ def _handle_sigint(sig, frame):
 signal.signal(signal.SIGINT, _handle_sigint)
 
 # =============================
-# CSV & prompt helpers
+# Spreadsheet & prompt helpers
 # =============================
 
-def read_csv(filename: str) -> List[Dict[str, str]]:
+def read_rows(filename: str) -> List[Dict[str, str]]:
+    if filename.lower().endswith((".xlsx", ".xls")):
+        df = pd.read_excel(filename, dtype=str)
+        df = df.fillna("")
+        return df.to_dict(orient="records")
     with open(filename, mode="r", encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f))
 
@@ -309,13 +315,27 @@ def choose_prompt_file(input_path: Path, user_prompt: Optional[str]) -> Path:
 
 
 def default_output_file(input_path: Path, user_output: Optional[str]) -> Path:
-    return Path(user_output) if user_output else input_path.with_name(f"{input_path.stem}{OUTPUT_FILE_SUFFIX}")
+    if user_output:
+        return Path(user_output)
+    suffix = OUTPUT_FILE_SUFFIX
+    if input_path.suffix.lower() in {".xlsx", ".xls"} and suffix.endswith(".csv"):
+        suffix = suffix[:-4] + ".xlsx"
+    return input_path.with_name(f"{input_path.stem}{suffix}")
 
 
 def collect_existing_ids_and_header(output_file: Path) -> Tuple[Set[str], List[str]]:
     """Return the set of IDs already in output and the existing header (if any)."""
     if not (output_file.exists() and output_file.stat().st_size > 0):
         return set(), []
+    if output_file.suffix.lower() in {".xlsx", ".xls"}:
+        df = pd.read_excel(output_file, dtype=str)
+        df = df.fillna("")
+        header = list(df.columns)
+        if "id" in header:
+            ids = set(df["id"].astype(str))
+        else:
+            ids = {str(i) for i in range(len(df))}
+        return ids, header
     with open(output_file, "r", encoding="utf-8", newline="") as f:
         rdr = csv.DictReader(f)
         header = rdr.fieldnames or []
@@ -385,7 +405,7 @@ async def main_process(args: argparse.Namespace) -> None:
     output_path = default_output_file(input_path, args.output)
     prompt_path = choose_prompt_file(input_path, args.prompt)
 
-    all_rows = read_csv(str(input_path))
+    all_rows = read_rows(str(input_path))
     if not all_rows:
         logging.info("No rows to process.")
         return
@@ -441,40 +461,55 @@ async def main_process(args: argparse.Namespace) -> None:
 
     # Open output once. If this is a resume, do not write header again.
     is_resume = output_path.exists() and output_path.stat().st_size > 0 and bool(existing_header)
+    is_excel = output_path.suffix.lower() in {".xlsx", ".xls"}
 
     try:
-        with open(output_path, "a", encoding="utf-8", newline="") as f_out:
+        if is_excel:
+            wb = load_workbook(output_path) if is_resume else Workbook()
+            ws = wb.active
+            writer: Optional[List[str]] = None
+        else:
+            f_out = open(output_path, "a", encoding="utf-8", newline="")
             writer: Optional[csv.DictWriter] = None
 
-            for bi, batch in enumerate(batched(pending, PROCESSING_BATCH_SIZE), start=1):
+        for bi, batch in enumerate(batched(pending, PROCESSING_BATCH_SIZE), start=1):
 
-                async def run_one(idx: int, raw: Dict[str, Any]) -> Dict[str, Any]:
-                    async with sem:
-                        return await process_row(idx, raw, client, prompt_template, args.model, schema)
+            async def run_one(idx: int, raw: Dict[str, Any]) -> Dict[str, Any]:
+                async with sem:
+                    return await process_row(idx, raw, client, prompt_template, args.model, schema)
 
-                results = await asyncio.gather(*(run_one(idx, raw) for idx, raw in batch))
+            results = await asyncio.gather(*(run_one(idx, raw) for idx, raw in batch))
 
-                # Filter successes and update dynamic keys (before header is fixed for new runs)
-                successes: List[Dict[str, Any]] = []
-                batch_keys: List[str] = []
-                for res in results:
-                    if res.get("_error"):
-                        failed += 1
-                        continue
-                    successes.append(res)
-                    for k in res.keys():
-                        if k not in batch_keys:
-                            batch_keys.append(k)
-
-                if not successes:
-                    logging.info("Batch %d: no successful rows.", bi)
-                    if SHUTDOWN_REQUESTED:
-                        logging.warning("Stopping after current batch. Ctrl+C to exit now.")
-                        break
+            # Filter successes and update dynamic keys (before header is fixed for new runs)
+            successes: List[Dict[str, Any]] = []
+            batch_keys: List[str] = []
+            for res in results:
+                if res.get("_error"):
+                    failed += 1
                     continue
+                successes.append(res)
+                for k in res.keys():
+                    if k not in batch_keys:
+                        batch_keys.append(k)
 
-                # Initialize writer/header
-                if writer is None:
+            if not successes:
+                logging.info("Batch %d: no successful rows.", bi)
+                if SHUTDOWN_REQUESTED:
+                    logging.warning("Stopping after current batch. Ctrl+C to exit now.")
+                    break
+                continue
+
+            # Initialize writer/header
+            if writer is None:
+                if is_excel:
+                    if is_resume and existing_header:
+                        writer = existing_header
+                    else:
+                        final_header = list(dict.fromkeys(tentative_header + batch_keys))
+                        writer = final_header
+                        ws.append(writer)
+                        wb.save(output_path)
+                else:
                     if is_resume and existing_header:
                         writer = csv.DictWriter(f_out, fieldnames=existing_header, extrasaction="ignore")
                     else:
@@ -482,23 +517,32 @@ async def main_process(args: argparse.Namespace) -> None:
                         writer = csv.DictWriter(f_out, fieldnames=final_header, extrasaction="ignore")
                         writer.writeheader()
 
-                # Write successes using fixed header
+            # Write successes using fixed header
+            if is_excel:
+                for row in successes:
+                    ws.append([row.get(k, "") for k in writer])
+                wb.save(output_path)
+            else:
                 writer.writerows({k: row.get(k, "") for k in writer.fieldnames} for row in successes)
 
-                # Stats
-                processed += len(successes)
-                for s in successes:
-                    if "id" in s and s["id"] is not None:
-                        written_ids_this_run.add(str(s["id"]).strip())
+            # Stats
+            processed += len(successes)
+            for s in successes:
+                if "id" in s and s["id"] is not None:
+                    written_ids_this_run.add(str(s["id"]).strip())
 
-                logging.info("Batch %d done | wrote=%d | total_this_run=%d/%d | failed=%d",
-                             bi, len(successes), processed, scheduled, failed)
+            logging.info("Batch %d done | wrote=%d | total_this_run=%d/%d | failed=%d",
+                         bi, len(successes), processed, scheduled, failed)
 
-                if SHUTDOWN_REQUESTED:
-                    logging.warning("Stopping after current batch. Ctrl+C to exit now.")
-                    break
+            if SHUTDOWN_REQUESTED:
+                logging.warning("Stopping after current batch. Ctrl+C to exit now.")
+                break
 
     finally:
+        if is_excel:
+            wb.close()
+        else:
+            f_out.close()
         overall_done = len(existing_ids | written_ids_this_run)
         remaining = max(0, total_rows - overall_done)
 
@@ -512,10 +556,10 @@ async def main_process(args: argparse.Namespace) -> None:
 # =============================
 
 def main():
-    parser = argparse.ArgumentParser(description="Enrich CSV rows using the OpenAI Responses API (async, JSON-only).")
-    parser.add_argument("input", help="Input CSV file path")
+    parser = argparse.ArgumentParser(description="Enrich CSV/Excel rows using the OpenAI Responses API (async, JSON-only).")
+    parser.add_argument("input", help="Input CSV or Excel file path")
     parser.add_argument("--prompt", "-p", help="Prompt text file path")
-    parser.add_argument("--output", "-o", help="Output CSV file path")
+    parser.add_argument("--output", "-o", help="Output CSV or Excel file path")
     parser.add_argument("--schema", help="JSON schema file path (strict). If omitted, uses json_object.")
     parser.add_argument("--limit", type=int, help="Limit number of new rows to process")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model to use (default: {DEFAULT_MODEL})")
