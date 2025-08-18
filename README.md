@@ -66,6 +66,18 @@ Sample datasets (`address.csv` and `address.xlsx`) with the matching prompt and 
 
 ---
 
+## Streamlit UI
+
+You can also run the processor through a simple web UI built with Streamlit.
+
+```bash
+streamlit run csvai-ui.py
+```
+
+The UI lets you upload a CSV/Excel file, provide a prompt and optional schema, watch a live log, and pause, resume, or stop processing before downloading the enriched output.
+
+---
+
 ## Example Prompt & Schema
 
 ### Prompt (`address.prompt.txt`)

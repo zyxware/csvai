@@ -1,4 +1,4 @@
-Extract city, state, and country from the given address.
+Extract city, state, and country from the given address and output JSON.
 
 Rules:
 - city: city/town/locality (preserve accents, proper case)
