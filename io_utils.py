@@ -29,25 +29,42 @@ def _load_table(path: Path) -> pd.DataFrame:
     df = reader(path)
     return df.fillna("")
 
-def append_rows(path: Path, rows: Iterable[Dict[str, Any]], header: List[str]) -> None:
-    """Append rows to CSV or Excel, creating file and header if needed."""
-    is_excel = path.suffix.lower() in {".xlsx", ".xls"}
-    exists = path.exists() and path.stat().st_size > 0
-    if is_excel:
-        wb = load_workbook(path) if exists else Workbook()
-        ws = wb.active
-        if not exists:
-            ws.append(header)
-        for row in rows:
-            ws.append([row.get(k, "") for k in header])
-        wb.save(path)
-    else:
-        mode = "a" if exists else "w"
-        with open(path, mode, encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
+
+class RowWriter:
+    """Efficiently append rows to CSV or Excel output files."""
+
+    def __init__(self, path: Path, header: List[str]):
+        self.path = path
+        self.header = header
+        self.is_excel = path.suffix.lower() in {".xlsx", ".xls"}
+        self._open()
+
+    def _open(self) -> None:
+        exists = self.path.exists() and self.path.stat().st_size > 0
+        if self.is_excel:
+            self.wb = load_workbook(self.path) if exists else Workbook()
+            self.ws = self.wb.active
             if not exists:
-                writer.writeheader()
-            writer.writerows({k: r.get(k, "") for k in header} for r in rows)
+                self.ws.append(self.header)
+        else:
+            mode = "a" if exists else "w"
+            self.f = open(self.path, mode, encoding="utf-8", newline="")
+            self.writer = csv.DictWriter(self.f, fieldnames=self.header, extrasaction="ignore")
+            if not exists:
+                self.writer.writeheader()
+
+    def append(self, rows: Iterable[Dict[str, Any]]) -> None:
+        if self.is_excel:
+            for row in rows:
+                self.ws.append([row.get(k, "") for k in self.header])
+        else:
+            self.writer.writerows({k: r.get(k, "") for k in self.header} for r in rows)
+
+    def close(self) -> None:
+        if self.is_excel:
+            self.wb.save(self.path)
+        else:
+            self.f.close()
 
 def read_rows(filename: str) -> List[Dict[str, str]]:
     """Read rows from a CSV or Excel file as list of dicts."""

@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import signal
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -49,7 +50,7 @@ from io_utils import (
     choose_prompt_file,
     default_output_file,
     collect_existing_ids_and_header,
-    append_rows,
+    RowWriter,
 )
 
 # =============================
@@ -66,6 +67,11 @@ REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", 45.0))
 MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", 4))
 INITIAL_BACKOFF = float(os.getenv("INITIAL_BACKOFF", 2.0))
 BACKOFF_FACTOR = float(os.getenv("BACKOFF_FACTOR", 1.7))
+
+if MAX_CONCURRENT_REQUESTS <= 0:
+    raise ValueError("MAX_CONCURRENT_REQUESTS must be positive")
+if PROCESSING_BATCH_SIZE <= 0:
+    raise ValueError("PROCESSING_BATCH_SIZE must be positive")
 
 # =============================
 # Logging
@@ -102,10 +108,11 @@ def sanitize_keys(row: Dict[str, Any]) -> Dict[str, str]:
             for k, v in (row or {}).items() if k is not None}
 
 
+_CURLY_VAR_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
+
+
 def sanitize_prompt_placeholders(prompt_template: str, raw_keys: List[str]) -> str:
     """Map {{ Raw Header }} → {{ Raw_Header }} only for simple identifiers (leave complex Jinja intact)."""
-    import re
-    _CURLY_VAR_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
     key_map = {k: sanitize_key_name(k) for k in raw_keys}
 
     def _replace(m: "re.Match[str]") -> str:
@@ -242,7 +249,7 @@ def load_schema(schema_path: Optional[str], prompt_path: Optional[Path]) -> Opti
             path = cand
             logging.info("Auto-discovered schema file: %s", path)
 
-    if not path:
+    if path is None:
         return None
 
     # Load & normalize schema
@@ -278,6 +285,18 @@ def batched(items: List[Any], size: int) -> Iterable[List[Any]]:
 # Row processing
 # =============================
 
+
+class RowResult:
+    def __init__(self, id: str, data: Optional[Dict[str, Any]] = None, error: Optional[str] = None):
+        self.id = id
+        self.data = data or {}
+        self.error = error
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
 async def process_row(
     row_idx: int,
     raw_row: Dict[str, Any],
@@ -285,31 +304,31 @@ async def process_row(
     prompt_template: str,
     model: str,
     schema: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
+) -> RowResult:
     row_id = (raw_row.get("id") or str(row_idx)).strip()
     sanitized = sanitize_keys(raw_row)
     sanitized["id"] = row_id
     try:
         prompt = render_prompt(prompt_template, sanitized, raw_row)
     except Exception as e:
-        return {"id": row_id, "_error": f"prompt_error: {e}"}
+        return RowResult(id=row_id, error=f"prompt_error: {e}")
 
     raw = await call_openai_responses(prompt, client, model, schema)
     if not raw:
-        return {"id": row_id, "_error": "api_empty"}
+        return RowResult(id=row_id, error="api_empty")
 
     try:
         enriched = json.loads(raw)
         if isinstance(enriched, list):
             enriched = (enriched[0] if enriched else {})  # normalize list → first obj
         if not isinstance(enriched, dict):
-            return {"id": row_id, "_error": "json_type"}
+            return RowResult(id=row_id, error="json_type")
     except Exception as e:
-        return {"id": row_id, "_error": f"json_parse: {e}"}
+        return RowResult(id=row_id, error=f"json_parse: {e}")
 
     out = dict(sanitized)
     out.update(sanitize_keys(enriched))
-    return out
+    return RowResult(id=row_id, data=out)
 
 # =============================
 # Main routine
@@ -363,8 +382,12 @@ async def main_process(args: argparse.Namespace) -> None:
         "Plan → already_enriched=%d | pending_new=%d | scheduled_now=%d",
         len(existing_ids), len(all_rows) - len(existing_ids), scheduled,
     )
-    logging.info("Using model=%s, concurrency=%d, batch_size=%d",
-                 args.model, MAX_CONCURRENT_REQUESTS, PROCESSING_BATCH_SIZE)
+    logging.info(
+        "Using model=%s, concurrency=%d, batch_size=%d",
+        args.model,
+        MAX_CONCURRENT_REQUESTS,
+        PROCESSING_BATCH_SIZE,
+    )
 
     # Determine base/header keys
     base_keys = [sanitize_key_name(k) for k in all_rows[0].keys()]
@@ -379,25 +402,34 @@ async def main_process(args: argparse.Namespace) -> None:
     written_ids_this_run: Set[str] = set()
 
     header: Optional[List[str]] = existing_header if existing_header else None
+    writer: Optional[RowWriter] = RowWriter(output_path, header) if header else None
 
     try:
-        for bi, batch in enumerate(batched(pending, PROCESSING_BATCH_SIZE), start=1):
+        for bi, batch in enumerate(
+            batched(pending, PROCESSING_BATCH_SIZE), start=1
+        ):
 
-            async def run_one(idx: int, raw: Dict[str, Any]) -> Dict[str, Any]:
+            async def run_one(idx: int, raw: Dict[str, Any]) -> RowResult:
                 async with sem:
                     return await process_row(idx, raw, client, prompt_template, args.model, schema)
 
-            results = await asyncio.gather(*(run_one(idx, raw) for idx, raw in batch))
+            results = await asyncio.gather(
+                *(run_one(idx, raw) for idx, raw in batch), return_exceptions=True
+            )
 
             # Filter successes and update dynamic keys (before header is fixed for new runs)
             successes: List[Dict[str, Any]] = []
             batch_keys: List[str] = []
             for res in results:
-                if res.get("_error"):
+                if isinstance(res, Exception):
+                    failed += 1
+                    logging.error("Unexpected error: %s", res)
+                    continue
+                if not res.ok:
                     failed += 1
                     continue
-                successes.append(res)
-                for k in res.keys():
+                successes.append(res.data)
+                for k in res.data.keys():
                     if k not in batch_keys:
                         batch_keys.append(k)
 
@@ -408,12 +440,14 @@ async def main_process(args: argparse.Namespace) -> None:
                     break
                 continue
 
-            # Initialize header on first successful batch
+            # Initialize header and writer on first successful batch
             if header is None:
                 header = list(dict.fromkeys(tentative_header + batch_keys))
+                writer = RowWriter(output_path, header)
 
             # Write successes using fixed header
-            append_rows(output_path, successes, header)
+            if writer is not None:
+                writer.append(successes)
 
             # Stats
             processed += len(successes)
@@ -421,8 +455,14 @@ async def main_process(args: argparse.Namespace) -> None:
                 if "id" in s and s["id"] is not None:
                     written_ids_this_run.add(str(s["id"]).strip())
 
-            logging.info("Batch %d done | wrote=%d | total_this_run=%d/%d | failed=%d",
-                         bi, len(successes), processed, scheduled, failed)
+            logging.info(
+                "Batch %d done | wrote=%d | total_this_run=%d/%d | failed=%d",
+                bi,
+                len(successes),
+                processed,
+                scheduled,
+                failed,
+            )
 
             if SHUTDOWN_REQUESTED:
                 logging.warning("Stopping after current batch. Ctrl+C to exit now.")
@@ -433,8 +473,16 @@ async def main_process(args: argparse.Namespace) -> None:
         remaining = max(0, total_rows - overall_done)
 
         logging.info("Summary: output=%s", output_path)
-        logging.info("Totals: input=%d | processed_this_run=%d | processed_overall=%d | remaining=%d | failed=%d",
-                     total_rows, processed, overall_done, remaining, failed)
+        logging.info(
+            "Totals: input=%d | processed_this_run=%d | processed_overall=%d | remaining=%d | failed=%d",
+            total_rows,
+            processed,
+            overall_done,
+            remaining,
+            failed,
+        )
+        if writer is not None:
+            writer.close()
         await client.close()
 
 # =============================
@@ -448,7 +496,11 @@ def main():
     parser.add_argument("--output", "-o", help="Output CSV or Excel file path")
     parser.add_argument("--schema", help="JSON schema file path (strict). If omitted, uses json_object.")
     parser.add_argument("--limit", type=int, help="Limit number of new rows to process")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model to use (default: {DEFAULT_MODEL})")
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Model to use (default: {DEFAULT_MODEL})",
+    )
     args = parser.parse_args()
 
     try:
