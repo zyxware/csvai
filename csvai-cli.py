@@ -3,12 +3,12 @@ import asyncio
 import logging
 import signal
 
-from .processor import CSVAIProcessor, ProcessorConfig
+from csvai.processor import CSVAIProcessor, ProcessorConfig
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Enrich CSV/Excel rows using the OpenAI Responses API (async, JSON-only)."
+        description="Enrich CSV/Excel rows."
     )
     parser.add_argument("input", help="Input CSV or Excel file path")
     parser.add_argument("--prompt", "-p", help="Prompt text file path")
