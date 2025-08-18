@@ -1,3 +1,5 @@
+"""Utilities for reading and writing CSV/Excel files."""
+
 import csv
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple

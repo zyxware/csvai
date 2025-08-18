@@ -1,3 +1,5 @@
+"""Asynchronous CSV row processor using OpenAI models."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from dotenv import load_dotenv
 from jinja2 import Environment, StrictUndefined
 from openai import AsyncOpenAI
 
@@ -22,7 +23,6 @@ from .io_utils import (
     RowWriter,
 )
 
-load_dotenv()
 
 # =============================
 # Configuration

@@ -1,4 +1,4 @@
-# streamlit_app.py
+"""Streamlit UI for CSVAI."""
 import asyncio
 import hashlib
 import logging
@@ -7,6 +7,10 @@ import time
 import queue
 from pathlib import Path
 import tempfile
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import streamlit as st
 
