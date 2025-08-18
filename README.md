@@ -1,6 +1,6 @@
 # CSVAI — Apply an AI prompt to each row in a CSV or Excel file and write enriched results
 
-`csvai.py` reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file.
+The `csvai` library reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file.
 
 The tool is **async + concurrent**, **resumable**, and **crash-safe**. It supports **Structured Outputs** with a **JSON Schema** for reliable JSON, or **JSON mode** (without a schema) if you prefer a lighter setup.
 
@@ -49,17 +49,17 @@ input.schema.json   # optional
 Run:
 
 ```bash
-python csvai.py input.csv      # or input.xlsx
+python -m csvai.cli input.csv      # or input.xlsx
 ```
 
 ### Or specify prompt & schema explicitly
 
 ```bash
 # With a prompt and a strict schema (best reliability)
-python csvai.py address.xlsx --prompt address.prompt.txt --schema address.schema.json
+python -m csvai.cli address.xlsx --prompt address.prompt.txt --schema address.schema.json
 
 # Or JSON mode (no schema; still a single JSON object)
-python csvai.py address.xlsx --prompt address.prompt.txt
+python -m csvai.cli address.xlsx --prompt address.prompt.txt
 ```
 
 Sample datasets (`address.csv` and `address.xlsx`) with the matching prompt and schema live in the `example/` directory.
@@ -166,7 +166,7 @@ Stars: {{stars}}
 **Command to execute**
 
 ```bash
-python csvai.py reviews.csv --prompt reviews.prompt.txt --schema reviews.schema.json
+python -m csvai.cli reviews.csv --prompt reviews.prompt.txt --schema reviews.schema.json
 ```
 **Tip — have the builder generate a schema for you**
 * **I have `products.csv` with Product Title, Product Description, Category, and Sub Category. Help me enrich with SEO meta fields.**
@@ -182,7 +182,7 @@ python csvai.py reviews.csv --prompt reviews.prompt.txt --schema reviews.schema.
 ## CLI
 
 ```bash
-python csvai.py INPUT.csv [--prompt PROMPT_FILE] [--output OUTPUT_FILE]
+python -m csvai.cli INPUT.csv [--prompt PROMPT_FILE] [--output OUTPUT_FILE]
                           [--limit N] [--model MODEL] [--schema SCHEMA_FILE]
 ```
 
