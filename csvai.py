@@ -30,9 +30,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import csv
-import pandas as pd
-from openpyxl import Workbook, load_workbook
 import json
 import logging
 import os
@@ -44,10 +41,20 @@ from dotenv import load_dotenv
 from jinja2 import Environment, StrictUndefined
 from openai import AsyncOpenAI
 
+load_dotenv()
+
+from io_utils import (
+    read_rows,
+    read_prompt,
+    choose_prompt_file,
+    default_output_file,
+    collect_existing_ids_and_header,
+    append_rows,
+)
+
 # =============================
 # Configuration
 # =============================
-load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
@@ -59,9 +66,6 @@ REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", 45.0))
 MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", 4))
 INITIAL_BACKOFF = float(os.getenv("INITIAL_BACKOFF", 2.0))
 BACKOFF_FACTOR = float(os.getenv("BACKOFF_FACTOR", 1.7))
-DEFAULT_PROMPT_FILENAME = os.getenv("DEFAULT_PROMPT_FILENAME", "prompt.txt")
-ALT_PROMPT_SUFFIX = os.getenv("ALT_PROMPT_SUFFIX", ".prompt.txt")
-OUTPUT_FILE_SUFFIX = os.getenv("OUTPUT_FILE_SUFFIX", "_enriched.csv")
 
 # =============================
 # Logging
@@ -88,20 +92,6 @@ signal.signal(signal.SIGINT, _handle_sigint)
 # =============================
 # Spreadsheet & prompt helpers
 # =============================
-
-def read_rows(filename: str) -> List[Dict[str, str]]:
-    if filename.lower().endswith((".xlsx", ".xls")):
-        df = pd.read_excel(filename, dtype=str)
-        df = df.fillna("")
-        return df.to_dict(orient="records")
-    with open(filename, mode="r", encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
-
-
-def read_prompt(filename: str) -> str:
-    with open(filename, "r", encoding="utf-8") as f:
-        return f.read()
-
 
 def sanitize_key_name(key: str) -> str:
     return key.strip().replace('"', "").replace("'", "").replace(" ", "_")
@@ -280,77 +270,6 @@ def load_schema(schema_path: Optional[str], prompt_path: Optional[Path]) -> Opti
 
 # =============================
 # File helpers
-# =============================
-
-def choose_prompt_file(input_path: Path, user_prompt: Optional[str]) -> Path:
-    """Return the prompt file to use, with auto-discovery if none provided.
-
-    Auto-discovery tries, in order (first existing wins):
-      1) <input>.prompt.txt              (e.g., address.csv → address.prompt.txt)
-      2) DEFAULT_PROMPT_FILENAME         (e.g., prompt.txt)
-    """
-    path: Optional[Path] = None
-    if user_prompt:
-        path = Path(user_prompt).expanduser().resolve()
-        if not path.exists():
-            raise FileNotFoundError(f"Prompt file not found: {path}")
-        logging.info("Using prompt file: %s", path)
-        return path
-
-    # 1) address.csv → address.prompt.txt
-    c1 = input_path.with_suffix(ALT_PROMPT_SUFFIX)
-    if c1.exists():
-        logging.info("Auto-discovered prompt file: %s", c1)
-        return c1
-
-    # 2) prompt.txt (DEFAULT_PROMPT_FILENAME)
-    c2 = Path(DEFAULT_PROMPT_FILENAME)
-    if c2.exists():
-        logging.info("Auto-discovered prompt file: %s", c2)
-        return c2
-
-    raise FileNotFoundError(
-        f"No prompt file supplied and neither '{c1.name}' nor '{c2.name}' exist."
-    )
-
-
-def default_output_file(input_path: Path, user_output: Optional[str]) -> Path:
-    if user_output:
-        return Path(user_output)
-    suffix = OUTPUT_FILE_SUFFIX
-    if input_path.suffix.lower() in {".xlsx", ".xls"} and suffix.endswith(".csv"):
-        suffix = suffix[:-4] + ".xlsx"
-    return input_path.with_name(f"{input_path.stem}{suffix}")
-
-
-def collect_existing_ids_and_header(output_file: Path) -> Tuple[Set[str], List[str]]:
-    """Return the set of IDs already in output and the existing header (if any)."""
-    if not (output_file.exists() and output_file.stat().st_size > 0):
-        return set(), []
-    if output_file.suffix.lower() in {".xlsx", ".xls"}:
-        df = pd.read_excel(output_file, dtype=str)
-        df = df.fillna("")
-        header = list(df.columns)
-        if "id" in header:
-            ids = set(df["id"].astype(str))
-        else:
-            ids = {str(i) for i in range(len(df))}
-        return ids, header
-    with open(output_file, "r", encoding="utf-8", newline="") as f:
-        rdr = csv.DictReader(f)
-        header = rdr.fieldnames or []
-        ids: Set[str] = set()
-        if "id" in (header or []):
-            for row in rdr:
-                rid = (row.get("id") or "").strip()
-                if rid:
-                    ids.add(rid)
-        else:
-            for i, _ in enumerate(rdr):
-                ids.add(str(i))
-        return ids, header
-
-
 def batched(items: List[Any], size: int) -> Iterable[List[Any]]:
     for i in range(0, len(items), max(1, size)):
         yield items[i : i + size]
@@ -459,19 +378,9 @@ async def main_process(args: argparse.Namespace) -> None:
     processed, failed = 0, 0
     written_ids_this_run: Set[str] = set()
 
-    # Open output once. If this is a resume, do not write header again.
-    is_resume = output_path.exists() and output_path.stat().st_size > 0 and bool(existing_header)
-    is_excel = output_path.suffix.lower() in {".xlsx", ".xls"}
+    header: Optional[List[str]] = existing_header if existing_header else None
 
     try:
-        if is_excel:
-            wb = load_workbook(output_path) if is_resume else Workbook()
-            ws = wb.active
-            writer: Optional[List[str]] = None
-        else:
-            f_out = open(output_path, "a", encoding="utf-8", newline="")
-            writer: Optional[csv.DictWriter] = None
-
         for bi, batch in enumerate(batched(pending, PROCESSING_BATCH_SIZE), start=1):
 
             async def run_one(idx: int, raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -499,31 +408,12 @@ async def main_process(args: argparse.Namespace) -> None:
                     break
                 continue
 
-            # Initialize writer/header
-            if writer is None:
-                if is_excel:
-                    if is_resume and existing_header:
-                        writer = existing_header
-                    else:
-                        final_header = list(dict.fromkeys(tentative_header + batch_keys))
-                        writer = final_header
-                        ws.append(writer)
-                        wb.save(output_path)
-                else:
-                    if is_resume and existing_header:
-                        writer = csv.DictWriter(f_out, fieldnames=existing_header, extrasaction="ignore")
-                    else:
-                        final_header = list(dict.fromkeys(tentative_header + batch_keys))
-                        writer = csv.DictWriter(f_out, fieldnames=final_header, extrasaction="ignore")
-                        writer.writeheader()
+            # Initialize header on first successful batch
+            if header is None:
+                header = list(dict.fromkeys(tentative_header + batch_keys))
 
             # Write successes using fixed header
-            if is_excel:
-                for row in successes:
-                    ws.append([row.get(k, "") for k in writer])
-                wb.save(output_path)
-            else:
-                writer.writerows({k: row.get(k, "") for k in writer.fieldnames} for row in successes)
+            append_rows(output_path, successes, header)
 
             # Stats
             processed += len(successes)
@@ -539,10 +429,6 @@ async def main_process(args: argparse.Namespace) -> None:
                 break
 
     finally:
-        if is_excel:
-            wb.close()
-        else:
-            f_out.close()
         overall_done = len(existing_ids | written_ids_this_run)
         remaining = max(0, total_rows - overall_done)
 
