@@ -1,4 +1,4 @@
-"""Streamlit UI for CSVAI."""
+"""Streamlit UI for CSVAI — live-updating prompt controls (no form gating)."""
 import asyncio
 import hashlib
 import logging
@@ -10,12 +10,12 @@ import tempfile
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 import streamlit as st
 
 from csvai.processor import CSVAIProcessor, ProcessorConfig
 from csvai.io_utils import default_output_file
+
+load_dotenv()
 
 # -----------------------------------------------------------------------------
 # Page setup & persistent state
@@ -65,27 +65,27 @@ def stable_working_dir(upload_name: str, upload_bytes: bytes) -> Path:
     return base
 
 # -----------------------------------------------------------------------------
-# Inputs (simple)
+# Inputs (live-updating; NOT inside a form)
 # -----------------------------------------------------------------------------
-with st.form("csvai_form", clear_on_submit=False):
-    uploaded = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx", "xls"])
-    prompt_src = st.radio("Prompt source", ["Upload file", "Paste text"], horizontal=True)
-    if prompt_src == "Upload file":
-        prompt_file = st.file_uploader("Prompt (.txt)", type=["txt"], key="prompt_file")
-        prompt_text = None
-    else:
-        prompt_file = None
-        prompt_text = st.text_area("Prompt text", height=160, key="prompt_text")
+uploaded = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx", "xls"], key="uploaded")
 
-    schema_file = st.file_uploader("Schema (optional, .json)", type=["json"])
-    model = st.text_input("Model", value=ProcessorConfig.model)
-    limit = st.number_input("Row limit (0 = all new)", min_value=0, value=0, step=1)
+prompt_src = st.radio("Prompt source", ["Upload file", "Paste text"], horizontal=True, key="prompt_src")
+if prompt_src == "Upload file":
+    prompt_file = st.file_uploader("Prompt (.txt)", type=["txt"], key="prompt_file")
+    prompt_text = None
+else:
+    prompt_file = None
+    prompt_text = st.text_area("Prompt text", height=160, key="prompt_text")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        run_clicked = st.form_submit_button("▶ Run", use_container_width=True)
-    with col2:
-        reset_clicked = st.form_submit_button("Reset working folder", use_container_width=True)
+schema_file = st.file_uploader("Schema (optional, .json)", type=["json"], key="schema_file")
+model = st.text_input("Model", value=ProcessorConfig.model, key="model")
+limit = st.number_input("Row limit (0 = all new)", min_value=0, value=0, step=1, key="limit")
+
+c1, c2 = st.columns(2)
+with c1:
+    run_clicked = st.button("▶ Run", use_container_width=True, key="run_btn")
+with c2:
+    reset_clicked = st.button("Reset working folder", use_container_width=True, key="reset_btn")
 
 # Reset working folder (simple: just clear state & forget output file)
 if reset_clicked:
@@ -186,10 +186,10 @@ drain_logs()
 processor = st.session_state.processor
 thread = st.session_state.thread
 
-# Controls during run (optional; simple)
-if thread and thread.is_alive():
+# Controls during run
+if thread and thread.is_alive() and processor:
     c1, c2, c3 = st.columns(3)
-    paused = processor is not None and (not processor.pause_event.is_set())
+    paused = not processor.pause_event.is_set()
     with c1:
         st.button("Pause", on_click=processor.pause, disabled=paused, use_container_width=True)
     with c2:
