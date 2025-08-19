@@ -28,9 +28,12 @@ cd csvai
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 cp example.env .env
 # Edit .env and set OPENAI_API_KEY=sk-...
 ```
+
+Installing the package exposes the `csvai` CLI, allowing you to run `csvai input.csv` directly.
 
 ---
 
@@ -49,17 +52,17 @@ input.schema.json   # optional
 Run:
 
 ```bash
-python -m csvai.cli input.csv      # or input.xlsx
+csvai input.csv      # or input.xlsx
 ```
 
 ### Or specify prompt & schema explicitly
 
 ```bash
 # With a prompt and a strict schema (best reliability)
-python -m csvai.cli address.xlsx --prompt address.prompt.txt --schema address.schema.json
+csvai address.xlsx --prompt address.prompt.txt --schema address.schema.json
 
 # Or JSON mode (no schema; still a single JSON object)
-python -m csvai.cli address.xlsx --prompt address.prompt.txt
+csvai address.xlsx --prompt address.prompt.txt
 ```
 
 Sample datasets (`address.csv` and `address.xlsx`) with the matching prompt and schema live in the `example/` directory.
