@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import os
 import pandas as pd
+import logging
 from openpyxl import Workbook, load_workbook
 
 # Configuration for file handling
@@ -89,10 +90,12 @@ def choose_prompt_file(input_path: Path, user_prompt: Optional[str]) -> Path:
 
     c1 = input_path.with_suffix(ALT_PROMPT_SUFFIX)
     if c1.exists():
+        logging.info("Auto-discovered prompt file: %s", c1)
         return c1
 
     c2 = Path(DEFAULT_PROMPT_FILENAME)
     if c2.exists():
+        logging.info("Auto-discovered prompt file: %s", c2)
         return c2
 
     raise FileNotFoundError(
