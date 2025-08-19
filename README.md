@@ -329,7 +329,7 @@ If you're looking to automate a unique business process or build a similar syste
 
 ## Updates
 
-For updates and new versions, visit: [https://www.zyxware.com/](https://www.zyxware.com/)
+For updates and new versions, visit: [Project Page @ Zyxware](https://www.zyxware.com/article/6935/csvai-automate-data-enrichment-any-csv-or-excel-file-generative-ai)
 
 ---
 
