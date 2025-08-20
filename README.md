@@ -20,7 +20,28 @@ We also have a **CSV AI Prompt Builder** (a Custom GPT) to help you generate pro
 
 ## Installation
 
-Requires Python **3.9+**. Dependencies are listed in `requirements.txt`.
+Requires Python **3.9+**.
+OpenAI API Key: Create a key - https://platform.openai.com/api-keys and use it in the .env file with OPENAI_API_KEY=
+See example.env in the [project repo](https://github.com/zyxware/csvai).
+
+### From PyPI
+
+```bash
+pip install csvai
+# Include Streamlit UI dependencies
+pip install "csvai[ui]"
+```
+
+### From GitHub
+
+```bash
+# Install directly from the repository
+pip install git+https://github.com/zyxware/csvai.git
+# With Streamlit UI dependencies
+pip install "csvai[ui] @ git+https://github.com/zyxware/csvai.git"
+```
+
+### For local development
 
 ```bash
 git clone https://github.com/zyxware/csvai
@@ -33,13 +54,15 @@ cp example.env .env
 # Edit .env and set OPENAI_API_KEY=sk-...
 ```
 
-Installing the package exposes the `csvai` CLI, allowing you to run `csvai input.csv` directly.
+Installing the package exposes the `csvai` CLI and the `csvai-ui` command.
 
 ---
 
-## Quick Start
+## Usage
 
-### Auto-discovery
+### CLI
+
+#### Auto-discovery
 
 If you name your files like this:
 
@@ -55,7 +78,7 @@ Run:
 csvai input.csv      # or input.xlsx
 ```
 
-### Or specify prompt & schema explicitly
+#### Or specify prompt & schema explicitly
 
 ```bash
 # With a prompt and a strict schema (best reliability)
@@ -67,19 +90,15 @@ csvai address.xlsx --prompt address.prompt.txt
 
 Sample datasets (`address.csv` and `address.xlsx`) with the matching prompt and schema live in the `example/` directory.
 
----
+### Streamlit UI
 
-## Streamlit UI
-
-You can also run the processor through a simple web UI built with Streamlit.
-
-Download the csvai-ui.py from https://github.com/zyxware/csvai
+After installing with the `ui` extra, launch the web interface:
 
 ```bash
-streamlit run csvai-ui.py
+csvai-ui
 ```
 
-The UI lets you upload a CSV/Excel file, provide a prompt and optional schema, watch a live log, and pause, resume, or stop processing before downloading the enriched output.
+The UI lets you upload a CSV/Excel file, provide a prompt and optional schema.
 
 ---
 
