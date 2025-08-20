@@ -73,6 +73,8 @@ Sample datasets (`address.csv` and `address.xlsx`) with the matching prompt and 
 
 You can also run the processor through a simple web UI built with Streamlit.
 
+Download the csvai-ui.py from https://github.com/zyxware/csvai
+
 ```bash
 streamlit run csvai-ui.py
 ```
@@ -197,7 +199,7 @@ python -m csvai.cli reviews.csv --prompt reviews.prompt.txt --schema reviews.sch
 ## CLI
 
 ```bash
-python -m csvai.cli INPUT.csv [--prompt PROMPT_FILE] [--output OUTPUT_FILE]
+csvai INPUT.csv [--prompt PROMPT_FILE] [--output OUTPUT_FILE]
                           [--limit N] [--model MODEL] [--schema SCHEMA_FILE]
 ```
 

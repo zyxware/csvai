@@ -32,6 +32,7 @@ ui = ["streamlit"]
 
 [project.scripts]
 csvai = "csvai.cli:main"
+csvai-ui = "csvai.launch:main"
 
 [project.urls]
 "Homepage" = "https://www.zyxware.com/article/6935/csvai-automate-data-enrichment-any-csv-or-excel-file-generative-ai"

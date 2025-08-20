@@ -7,15 +7,14 @@ import time
 import queue
 from pathlib import Path
 import tempfile
-
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 import streamlit as st
 
 from csvai.processor import CSVAIProcessor, ProcessorConfig
 from csvai.io_utils import default_output_file
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 # -----------------------------------------------------------------------------
 # Page setup & persistent state
@@ -215,4 +214,3 @@ if thread and thread.is_alive():
     time.sleep(1)
     drain_logs()
     st.rerun()
-

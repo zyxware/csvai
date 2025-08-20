@@ -5,12 +5,12 @@ import asyncio
 import logging
 import signal
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 
 def main() -> None:
     """Run the CSVAI processor via the command line."""
-    load_dotenv()
+    load_dotenv(find_dotenv())
     from .processor import CSVAIProcessor, ProcessorConfig
 
     parser = argparse.ArgumentParser(
