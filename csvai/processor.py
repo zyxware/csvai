@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,26 +21,7 @@ from .io_utils import (
     collect_existing_ids_and_header,
     RowWriter,
 )
-
-
-# =============================
-# Configuration
-# =============================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
-MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", os.getenv("MAX_TOKENS", 800)))
-TEMPERATURE = float(os.getenv("TEMPERATURE", 0.2))
-MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", 10))
-PROCESSING_BATCH_SIZE = int(os.getenv("PROCESSING_BATCH_SIZE", 50))
-REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", 45.0))
-MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", 4))
-INITIAL_BACKOFF = float(os.getenv("INITIAL_BACKOFF", 2.0))
-BACKOFF_FACTOR = float(os.getenv("BACKOFF_FACTOR", 1.7))
-
-if MAX_CONCURRENT_REQUESTS <= 0:
-    raise ValueError("MAX_CONCURRENT_REQUESTS must be positive")
-if PROCESSING_BATCH_SIZE <= 0:
-    raise ValueError("PROCESSING_BATCH_SIZE must be positive")
+from .settings import Settings
 
 # =============================
 # Logging
@@ -93,11 +73,11 @@ def render_prompt(prompt_template: str, row: Dict[str, str], raw_row: Dict[str, 
 # =============================
 
 
-def get_async_client() -> AsyncOpenAI:
-    if not OPENAI_API_KEY:
+def get_async_client(settings: Settings) -> AsyncOpenAI:
+    if not settings.openai_api_key:
         logging.error("OPENAI_API_KEY missing. Set it in your environment or .env file.")
         raise SystemExit(2)
-    return AsyncOpenAI(api_key=OPENAI_API_KEY, timeout=REQUEST_TIMEOUT)
+    return AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.request_timeout)
 
 
 def _pick_text_from_response(resp: Any) -> str:
@@ -125,9 +105,10 @@ async def call_openai_responses(
     client: AsyncOpenAI,
     model: str,
     schema: Optional[Dict[str, Any]],
+    settings: Settings,
 ) -> Optional[str]:
-    backoff = INITIAL_BACKOFF
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    backoff = settings.initial_backoff
+    for attempt in range(1, settings.max_attempts + 1):
         try:
             if schema:
                 text_cfg: Dict[str, Any] = {
@@ -143,20 +124,20 @@ async def call_openai_responses(
             resp = await client.responses.create(
                 model=model,
                 input=prompt,
-                temperature=TEMPERATURE,
-                max_output_tokens=MAX_OUTPUT_TOKENS,
+                temperature=settings.temperature,
+                max_output_tokens=settings.max_output_tokens,
                 text=text_cfg,
             )
             return _pick_text_from_response(resp) or None
         except Exception as e:
-            if attempt == MAX_ATTEMPTS:
+            if attempt == settings.max_attempts:
                 logging.error(f"Responses API error (final): {e}")
                 return None
             logging.warning(
                 f"Responses API error (attempt {attempt}): {e} → retrying in {backoff:.1f}s"
             )
             await asyncio.sleep(backoff)
-            backoff *= BACKOFF_FACTOR
+            backoff *= settings.backoff_factor
     return None
 
 
@@ -235,6 +216,7 @@ async def process_row(
     prompt_template: str,
     model: str,
     schema: Optional[Dict[str, Any]],
+    settings: Settings,
 ) -> RowResult:
     row_id = (raw_row.get("id") or str(row_idx)).strip()
     sanitized = sanitize_keys(raw_row)
@@ -243,7 +225,7 @@ async def process_row(
         prompt = render_prompt(prompt_template, sanitized, raw_row)
     except Exception as e:
         return RowResult(id=row_id, error=f"prompt_error: {e}")
-    raw = await call_openai_responses(prompt, client, model, schema)
+    raw = await call_openai_responses(prompt, client, model, schema, settings)
     if not raw:
         return RowResult(id=row_id, error="api_empty")
     try:
@@ -271,12 +253,15 @@ class ProcessorConfig:
     output: Optional[str] = None
     schema: Optional[str] = None
     limit: Optional[int] = None
-    model: str = DEFAULT_MODEL
+    model: Optional[str] = None
 
 
 class CSVAIProcessor:
-    def __init__(self, config: ProcessorConfig):
+    def __init__(self, config: ProcessorConfig, settings: Optional[Settings] = None):
+        self.settings = settings or Settings()
         self.config = config
+        if not self.config.model:
+            self.config.model = self.settings.default_model
         self.pause_event = asyncio.Event()
         self.pause_event.set()
         self.shutdown_event = asyncio.Event()
@@ -308,7 +293,7 @@ class CSVAIProcessor:
         prompt_template = read_prompt(str(prompt_path))
         schema = load_schema(args.schema, prompt_path)
 
-        client = get_async_client()
+        client = get_async_client(self.settings)
 
         existing_ids, existing_header = collect_existing_ids_and_header(output_path)
 
@@ -340,8 +325,8 @@ class CSVAIProcessor:
         logging.info(
             "Using model=%s, concurrency=%d, batch_size=%d",
             args.model,
-            MAX_CONCURRENT_REQUESTS,
-            PROCESSING_BATCH_SIZE,
+            self.settings.max_concurrent_requests,
+            self.settings.processing_batch_size,
         )
 
         base_keys = [sanitize_key_name(k) for k in all_rows[0].keys()]
@@ -349,21 +334,21 @@ class CSVAIProcessor:
             base_keys = ["id"] + base_keys
         tentative_header: List[str] = list(dict.fromkeys(base_keys))
 
-        sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+        sem = asyncio.Semaphore(self.settings.max_concurrent_requests)
         processed, failed = 0, 0
         written_ids_this_run: Set[str] = set()
         header: Optional[List[str]] = existing_header if existing_header else None
         writer: Optional[RowWriter] = RowWriter(output_path, header) if header else None
 
         try:
-            for bi, batch in enumerate(batched(pending, PROCESSING_BATCH_SIZE), start=1):
+            for bi, batch in enumerate(batched(pending, self.settings.processing_batch_size), start=1):
                 await self.pause_event.wait()
                 if self.shutdown_event.is_set():
                     break
 
                 async def run_one(idx: int, raw: Dict[str, Any]) -> RowResult:
                     async with sem:
-                        return await process_row(idx, raw, client, prompt_template, args.model, schema)
+                        return await process_row(idx, raw, client, prompt_template, args.model, schema, self.settings)
 
                 results = await asyncio.gather(
                     *(run_one(idx, raw) for idx, raw in batch), return_exceptions=True

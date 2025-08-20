@@ -5,13 +5,13 @@ import asyncio
 import logging
 import signal
 
-from dotenv import load_dotenv, find_dotenv
+from .processor import CSVAIProcessor, ProcessorConfig
+from .settings import Settings
 
 
 def main() -> None:
     """Run the CSVAI processor via the command line."""
-    load_dotenv(find_dotenv())
-    from .processor import CSVAIProcessor, ProcessorConfig
+    settings = Settings()
 
     parser = argparse.ArgumentParser(
         description="Enrich CSV/Excel rows.",
@@ -24,7 +24,7 @@ def main() -> None:
         help="JSON schema file path (strict). If omitted, uses json_object.",
     )
     parser.add_argument("--limit", type=int, help="Limit number of new rows to process")
-    parser.add_argument("--model", default=ProcessorConfig.model, help="Model to use")
+    parser.add_argument("--model", default=settings.default_model, help="Model to use")
     args = parser.parse_args()
 
     config = ProcessorConfig(
@@ -35,7 +35,7 @@ def main() -> None:
         limit=args.limit,
         model=args.model,
     )
-    processor = CSVAIProcessor(config)
+    processor = CSVAIProcessor(config, settings=settings)
 
     def _handle_signal(sig, frame):
         logging.warning("Signal %s received: shutting down after current batch", sig)

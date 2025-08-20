@@ -7,14 +7,14 @@ import time
 import queue
 from pathlib import Path
 import tempfile
-from dotenv import load_dotenv, find_dotenv
 
 import streamlit as st
 
 from csvai.processor import CSVAIProcessor, ProcessorConfig
 from csvai.io_utils import default_output_file
+from csvai.settings import Settings
 
-load_dotenv(find_dotenv())
+settings = Settings()
 
 # -----------------------------------------------------------------------------
 # Page setup & persistent state
@@ -77,7 +77,7 @@ else:
     prompt_text = st.text_area("Prompt text", height=160, key="prompt_text")
 
 schema_file = st.file_uploader("Schema (optional, .json)", type=["json"], key="schema_file")
-model = st.text_input("Model", value=ProcessorConfig.model, key="model")
+model = st.text_input("Model", value=settings.default_model, key="model")
 limit = st.number_input("Row limit (0 = all new)", min_value=0, value=0, step=1, key="limit")
 
 c1, c2 = st.columns(2)
@@ -149,7 +149,7 @@ if run_clicked:
             limit=int(limit) if limit > 0 else None,
             model=model,
         )
-        processor = CSVAIProcessor(cfg)
+        processor = CSVAIProcessor(cfg, settings=settings)
 
         # Attach logging handler once
         if not st.session_state.log_handler_attached:
