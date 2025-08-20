@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "csvai"
-version = "0.1.0"
+version = "0.1.1"
 description = "Enrich CSV or Excel rows using OpenAI models."
 readme = "README.md"
 authors = [
