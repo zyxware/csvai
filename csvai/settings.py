@@ -22,7 +22,7 @@ class Settings:
     backoff_factor: float = 1.7
 
     def __post_init__(self) -> None:
-        load_dotenv(find_dotenv())
+        load_dotenv(find_dotenv(usecwd=True), override=True)
         self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
         self.default_model = os.getenv("DEFAULT_MODEL", self.default_model)
         self.max_output_tokens = int(
