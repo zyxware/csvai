@@ -7,6 +7,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+import base64
+import mimetypes
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -101,7 +103,7 @@ def _pick_text_from_response(resp: Any) -> str:
 
 
 async def call_openai_responses(
-    prompt: str,
+    input_payload: Any,
     client: AsyncOpenAI,
     model: str,
     schema: Optional[Dict[str, Any]],
@@ -123,7 +125,7 @@ async def call_openai_responses(
                 text_cfg = {"format": {"type": "json_object"}}
             resp = await client.responses.create(
                 model=model,
-                input=prompt,
+                input=input_payload,
                 temperature=settings.temperature,
                 max_output_tokens=settings.max_output_tokens,
                 text=text_cfg,
@@ -217,6 +219,9 @@ async def process_row(
     model: str,
     schema: Optional[Dict[str, Any]],
     settings: Settings,
+    process_image: bool,
+    image_col: Optional[str],
+    image_root: Optional[str],
 ) -> RowResult:
     row_id = (raw_row.get("id") or str(row_idx)).strip()
     sanitized = sanitize_keys(raw_row)
@@ -225,7 +230,70 @@ async def process_row(
         prompt = render_prompt(prompt_template, sanitized, raw_row)
     except Exception as e:
         return RowResult(id=row_id, error=f"prompt_error: {e}")
-    raw = await call_openai_responses(prompt, client, model, schema, settings)
+    # Build input for Responses API (text-only by default; multimodal if enabled and available)
+    input_payload: Any
+
+    if process_image:
+        col = (image_col or "image").strip()
+        val = (raw_row.get(col) or "").strip() if col else ""
+
+        def _resolve_image_part(v: str) -> Optional[Dict[str, Any]]:
+            if not v:
+                return None
+            lv = v.lower()
+            if lv.startswith("http://") or lv.startswith("https://"):
+                return {
+                    "type": "input_image",
+                    "image_url": v,
+                }
+            # Local file resolution: absolute/relative or under image_root
+            p = Path(v)
+            if not p.is_absolute():
+                # try relative to CWD first
+                p = Path.cwd() / v
+            if not p.exists():
+                root = Path(image_root) if image_root else (Path.cwd() / "images")
+                cand = root / v
+                if cand.exists():
+                    p = cand
+            if not p.exists():
+                logging.warning("Row %s: image not found '%s' → proceeding text-only", row_id, v)
+                return None
+            try:
+                data = p.read_bytes()
+                b64 = base64.b64encode(data).decode("ascii")
+                mime = mimetypes.guess_type(str(p))[0] or "image/jpeg"
+                data_url = f"data:{mime};base64,{b64}"
+                return {
+                    "type": "input_image",
+                    "image_url": data_url,
+                }
+            except Exception as e:
+                logging.warning(
+                    "Row %s: failed to read image '%s' (%s) → proceeding text-only",
+                    row_id,
+                    v,
+                    e,
+                )
+                return None
+
+        img_part = _resolve_image_part(val)
+        if img_part is not None:
+            input_payload = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        img_part,
+                    ],
+                }
+            ]
+        else:
+            input_payload = prompt
+    else:
+        input_payload = prompt
+
+    raw = await call_openai_responses(input_payload, client, model, schema, settings)
     if not raw:
         return RowResult(id=row_id, error="api_empty")
     try:
@@ -254,6 +322,10 @@ class ProcessorConfig:
     schema: Optional[str] = None
     limit: Optional[int] = None
     model: Optional[str] = None
+    # Image options (Option A)
+    process_image: bool = False
+    image_col: Optional[str] = None  # default to 'image' when None
+    image_root: Optional[str] = None  # default to CWD/images when None
 
 
 class CSVAIProcessor:
@@ -348,7 +420,18 @@ class CSVAIProcessor:
 
                 async def run_one(idx: int, raw: Dict[str, Any]) -> RowResult:
                     async with sem:
-                        return await process_row(idx, raw, client, prompt_template, args.model, schema, self.settings)
+                        return await process_row(
+                            idx,
+                            raw,
+                            client,
+                            prompt_template,
+                            args.model,
+                            schema,
+                            self.settings,
+                            process_image=self.config.process_image,
+                            image_col=(self.config.image_col or "image"),
+                            image_root=self.config.image_root,
+                        )
 
                 results = await asyncio.gather(
                     *(run_one(idx, raw) for idx, raw in batch), return_exceptions=True
@@ -417,4 +500,3 @@ class CSVAIProcessor:
             if writer is not None:
                 writer.close()
             await client.close()
-

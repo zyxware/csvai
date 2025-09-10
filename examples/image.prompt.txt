@@ -1,0 +1,11 @@
+Describe the attached image in one concise sentence as a factual caption.
+
+Rules:
+- description: one sentence (max ~25 words), focus on main subject, colors, and setting.
+- If no image is attached, set description to "No image provided".
+- Be neutral and avoid opinions or brand names unless visible.
+- Use the Title as optional context, but do not invent details.
+
+Inputs:
+Title: {{title}}
+

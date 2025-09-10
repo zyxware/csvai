@@ -1,6 +1,6 @@
 # CSVAI — Apply an AI prompt to each row in a CSV or Excel file and write enriched results
 
-The `csvai` library reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file.
+The `csvai` library reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file. It also support **image analysis** (vision) when enabled.
 
 The tool is **async + concurrent**, **resumable**, and **crash-safe**. It supports **Structured Outputs** with a **JSON Schema** for reliable JSON, or **JSON mode** (without a schema) if you prefer a lighter setup.
 
@@ -15,6 +15,7 @@ We also have a **CSV AI Prompt Builder** (a Custom GPT) to help you generate pro
 * **Async & concurrent**: process many rows in parallel for faster throughput.
 * **Resumable**: rows already written (by `id`) are skipped on re-run.
 * **CSV or Excel**: handle `.csv` and `.xlsx` inputs and outputs.
+* **image analysis**: add `--process-image` to attach an image per row (via URL or local file) to multimodal models like `gpt-4o-mini`.
 
 ---
 
@@ -99,6 +100,7 @@ csvai-ui
 ```
 
 The UI lets you upload a CSV/Excel file, provide a prompt and optional schema.
+A "Process images" toggle is available to attach an image per row; you can set the image column (default `image`) and the image root directory (default `./images`).
 
 ---
 
@@ -220,6 +222,7 @@ python -m csvai.cli reviews.csv --prompt reviews.prompt.txt --schema reviews.sch
 ```bash
 csvai INPUT.csv [--prompt PROMPT_FILE] [--output OUTPUT_FILE]
                           [--limit N] [--model MODEL] [--schema SCHEMA_FILE]
+                          [--process-image] [--image-col COL] [--image-root DIR]
 ```
 
 **Flags**
@@ -229,6 +232,15 @@ csvai INPUT.csv [--prompt PROMPT_FILE] [--output OUTPUT_FILE]
 * `--limit` — process only the first `N` new/pending rows.
 * `--model` — model name (default from `.env`, falls back to `gpt-4o-mini`).
 * `--schema` — path to a JSON Schema for structured outputs (optional).
+* `--process-image` — enable image analysis; when set, attaches an image per row if available.
+* `--image-col` — name of the image column (default: `image`).
+* `--image-root` — directory to resolve local image filenames (default: `./images`).
+
+Notes on images:
+- If the image cell is blank, the row is processed as text-only.
+- If the cell is a full URL (`http(s)://...`), the model fetches it.
+- Otherwise the value is treated as a filename: resolved as an absolute/relative path first, then `./images/<filename>`.
+- If a referenced file is missing/unreadable, the tool logs a warning and proceeds text-only.
 
 ---
 
@@ -258,6 +270,36 @@ OUTPUT_FILE_SUFFIX=_enriched.csv
 * **Resume**: rerunning skips rows whose `id` is already present in the output file.
 
 ---
+
+## Image Analysis Example
+
+Files in `examples/`:
+
+- `image.csv` — demo rows with an image URL, a local filename, and a blank image.
+- `image.prompt.txt` — prompt to produce a one-sentence `description`.
+- `image.schema.json` — schema requiring the `description` field.
+
+Local image (for row 2): place a file at `./images/sample.jpg` (relative to your current working directory). For convenience you can download a sample image, for example:
+
+```bash
+mkdir -p images
+curl -L -o images/sample.jpg https://upload.wikimedia.org/wikipedia/commons/3/3f/JPEG_example_flower.jpg
+```
+
+Run the example (multimodal enabled):
+
+```bash
+csvai examples/image.csv \
+  --prompt examples/image.prompt.txt \
+  --schema examples/image.schema.json \
+  --process-image
+```
+
+Notes:
+- The image column defaults to `image`; override with `--image-col` if needed.
+- Local filenames are resolved as-is first; if not found, `./images/<filename>` is tried.
+- If an image is missing or unreadable, the row is processed as text-only and a warning is logged.
+
 
 ## Structured Outputs vs JSON Mode
 

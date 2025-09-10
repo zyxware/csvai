@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "csvai"
-version = "0.1.1"
-description = "Enrich CSV or Excel rows using OpenAI models."
+version = "0.2.0"
+description = "Enrich CSV or Excel rows using OpenAI models (text or image analysis)."
 readme = "README.md"
 authors = [
     {name = "Zyxware Technologies"},
     {name = "Vimal Joseph"}
 ]
-keywords = ["csv", "excel", "ai", "openai", "data enrichment", "llm", "automation"]
+keywords = ["csv", "excel", "ai", "openai", "data enrichment", "llm", "automation", "vision", "image analysis"]
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 classifiers = [

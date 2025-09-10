@@ -80,6 +80,18 @@ schema_file = st.file_uploader("Schema (optional, .json)", type=["json"], key="s
 model = st.text_input("Model", value=settings.default_model, key="model")
 limit = st.number_input("Row limit (0 = all new)", min_value=0, value=0, step=1, key="limit")
 
+# Image processing options
+process_image = st.toggle("Process images", value=False, key="process_image")
+image_col = None
+image_root = None
+if process_image:
+    image_col = st.text_input("Image column", value="image", key="image_col")
+    image_root = st.text_input(
+        "Image root (for local filenames)",
+        value=str(Path.cwd() / "images"),
+        key="image_root",
+    )
+
 c1, c2 = st.columns(2)
 with c1:
     run_clicked = st.button("▶ Run", use_container_width=True, key="run_btn")
@@ -148,6 +160,9 @@ if run_clicked:
             schema=str(schema_path) if schema_path else None,
             limit=int(limit) if limit > 0 else None,
             model=model,
+            process_image=bool(process_image),
+            image_col=str(image_col) if image_col else None,
+            image_root=str(image_root) if image_root else None,
         )
         processor = CSVAIProcessor(cfg, settings=settings)
 

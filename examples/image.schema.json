@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "One-sentence factual caption of the image or 'No image provided' if no image is present"
+    }
+  },
+  "required": ["description"],
+  "additionalProperties": false
+}
+

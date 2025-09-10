@@ -25,6 +25,20 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, help="Limit number of new rows to process")
     parser.add_argument("--model", default=settings.default_model, help="Model to use")
+    # Image processing options (Option A)
+    parser.add_argument(
+        "--process-image",
+        action="store_true",
+        help="Enable image processing; attaches image from column (default 'image') or URL",
+    )
+    parser.add_argument(
+        "--image-col",
+        help="Name of the image column (default: 'image')",
+    )
+    parser.add_argument(
+        "--image-root",
+        help="Directory to resolve local image filenames (default: ./images)",
+    )
     args = parser.parse_args()
 
     config = ProcessorConfig(
@@ -34,6 +48,9 @@ def main() -> None:
         schema=args.schema,
         limit=args.limit,
         model=args.model,
+        process_image=args.process_image,
+        image_col=args.image_col,
+        image_root=args.image_root,
     )
     processor = CSVAIProcessor(config, settings=settings)
 
