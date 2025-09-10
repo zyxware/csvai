@@ -12,11 +12,10 @@ authors = [
     {name = "Vimal Joseph"}
 ]
 keywords = ["csv", "excel", "ai", "openai", "data enrichment", "llm", "automation", "vision", "image analysis"]
-license = { file = "LICENSE" }
+license = "GPL-2.0-only"
 requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
     "Operating System :: OS Independent",
 ]
 dependencies = [
