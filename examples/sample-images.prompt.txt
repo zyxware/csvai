@@ -1,0 +1,10 @@
+Generate concise, accessible alt text for the attached sports image to be used on a website.
+
+Rules:
+- alt_text: one sentence (max ~20 words), factual and specific; mention sport, key subject(s), action, and visible setting.
+- Avoid subjective language, brand names, or speculation; describe only what is visible.
+- If no image is attached, set alt_text to "No image provided".
+
+Inputs:
+Title: {{title}}
+

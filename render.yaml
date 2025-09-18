@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: csvai
+    env: python
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /
+    buildCommand: pip install "csvai[ui]"
+    startCommand: bash -lc 'export STREAMLIT_SERVER_PORT=$PORT STREAMLIT_SERVER_ADDRESS=0.0.0.0 && csvai-ui'
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEFAULT_MODEL
+        value: gpt-4o-mini
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "10"
+      - key: REQUEST_TIMEOUT
+        value: "45"

@@ -1,5 +1,7 @@
 # CSVAI — Apply an AI prompt to each row in a CSV or Excel file and write enriched results
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/zyxware/csvai)
+
 The `csvai` library reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file. It also support **image analysis** (vision) when enabled.
 
 The tool is **async + concurrent**, **resumable**, and **crash-safe**. It supports **Structured Outputs** with a **JSON Schema** for reliable JSON, or **JSON mode** (without a schema) if you prefer a lighter setup.
@@ -299,6 +301,19 @@ Notes:
 - The image column defaults to `image`; override with `--image-col` if needed.
 - Local filenames are resolved as-is first; if not found, `./images/<filename>` is tried.
 - If an image is missing or unreadable, the row is processed as text-only and a warning is logged.
+
+### Sports Alt Text Sample (10 images)
+
+1) Run CSVAI with the alt text prompt and schema:
+
+```bash
+csvai examples/sample-images.csv \
+  --prompt examples/sample-images.prompt.txt \
+  --schema examples/sample-images.schema.json \
+  --process-image
+```
+
+The output file will be `examples/sample-images_enriched.csv` and include the generated `alt_text` field.
 
 
 ## Structured Outputs vs JSON Mode

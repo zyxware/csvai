@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "alt_text": {
+      "type": "string",
+      "description": "One-sentence, factual, accessible alt text for the image or 'No image provided'"
+    }
+  },
+  "required": ["alt_text"],
+  "additionalProperties": false
+}
+
