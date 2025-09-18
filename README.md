@@ -2,6 +2,15 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/zyxware/csvai)
 
+Note (Render password): To require a password before the UI loads, set the environment variable `CSVAI_UI_PASSWORD` on your Render service. After saving the env var, Render restarts the app and the password prompt appears. For existing deployments that predate this feature, redeploy from the latest commit first, then set `CSVAI_UI_PASSWORD`. Recommend to use a strong password to make sure that only you can access the system.
+
+Environment variables to consider on Render:
+- `OPENAI_API_KEY` (required)
+- `DEFAULT_MODEL` (optional)
+- `MAX_CONCURRENT_REQUESTS` (optional)
+- `REQUEST_TIMEOUT` (optional)
+- `CSVAI_UI_PASSWORD` (optional, recommended; enables password gate for the UI)
+
 The `csvai` library reads an input CSV or Excel file, renders a prompt for each row (you can use raw column names like `{{ Address }}`), calls an **OpenAI model via the Responses API**, and writes the original columns plus AI-generated fields to an output CSV or Excel file. It also support **image analysis** (vision) when enabled.
 
 The tool is **async + concurrent**, **resumable**, and **crash-safe**. It supports **Structured Outputs** with a **JSON Schema** for reliable JSON, or **JSON mode** (without a schema) if you prefer a lighter setup.

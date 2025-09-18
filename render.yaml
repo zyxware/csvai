@@ -16,3 +16,5 @@ services:
         value: "10"
       - key: REQUEST_TIMEOUT
         value: "45"
+      - key: CSVAI_UI_PASSWORD
+        sync: false

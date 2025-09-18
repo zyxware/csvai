@@ -20,6 +20,7 @@ class Settings:
     max_attempts: int = 4
     initial_backoff: float = 2.0
     backoff_factor: float = 1.7
+    ui_password: str = ""
 
     def __post_init__(self) -> None:
         load_dotenv(find_dotenv(usecwd=True), override=True)
@@ -35,8 +36,8 @@ class Settings:
         self.max_attempts = int(os.getenv("MAX_ATTEMPTS", self.max_attempts))
         self.initial_backoff = float(os.getenv("INITIAL_BACKOFF", self.initial_backoff))
         self.backoff_factor = float(os.getenv("BACKOFF_FACTOR", self.backoff_factor))
+        self.ui_password = os.getenv("CSVAI_UI_PASSWORD", os.getenv("UI_PASSWORD", self.ui_password))
         if self.max_concurrent_requests <= 0:
             raise ValueError("max_concurrent_requests must be positive")
         if self.processing_batch_size <= 0:
             raise ValueError("processing_batch_size must be positive")
-

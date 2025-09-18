@@ -13,6 +13,7 @@ import streamlit as st
 from csvai.processor import CSVAIProcessor, ProcessorConfig
 from csvai.io_utils import default_output_file
 from csvai.settings import Settings
+import os
 
 settings = Settings()
 
@@ -30,6 +31,21 @@ st.session_state.setdefault("log_handler_attached", False)
 st.session_state.setdefault("raw_logs", [])
 st.session_state.setdefault("working_dir", None)
 st.session_state.setdefault("output_path", None)
+st.session_state.setdefault("auth_ok", False)
+
+# Optional password gate using env var CSVAI_UI_PASSWORD
+if settings.ui_password:
+    if not st.session_state.auth_ok:
+        pw = st.text_input("Enter password", type="password")
+        if pw:
+            if pw == settings.ui_password:
+                st.session_state.auth_ok = True
+                st.rerun()
+            else:
+                st.error("Incorrect password")
+        st.stop()
+else:
+    st.session_state.auth_ok = True
 
 # -----------------------------------------------------------------------------
 # Logging: worker -> queue  (no Streamlit calls in worker thread)
